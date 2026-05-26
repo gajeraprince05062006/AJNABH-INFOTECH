@@ -3,6 +3,7 @@ const router = express.Router();
 const validator = require('validator');
 const TeamMember = require('../models/TeamMember');
 const auth = require('../middleware/auth');
+const { uploadImage } = require('../utils/cloudinaryService');
 
 // Get all team members (public: active only; admin: all — requires auth)
 router.get('/', async (req, res) => {
@@ -41,20 +42,26 @@ router.post('/', auth, async (req, res) => {
     if (req.body.socialLinks.github) socialLinks.github = validator.trim(String(req.body.socialLinks.github)).substring(0, 500);
   }
 
-  const member = new TeamMember({
-    name: validator.trim(String(req.body.name)).substring(0, 100),
-    role: validator.trim(String(req.body.role)).substring(0, 100),
-    skills: Array.isArray(req.body.skills) ? req.body.skills.map(s => validator.trim(String(s)).substring(0, 100)) : [],
-    experience: req.body.experience ? validator.trim(String(req.body.experience)).substring(0, 200) : undefined,
-    socialLinks,
-    imageUrl: req.body.imageUrl ? validator.trim(String(req.body.imageUrl)).substring(0, 2000) : undefined,
-    isActive: req.body.isActive !== undefined ? req.body.isActive : true
-  });
   try {
+    let imageUrl = undefined;
+    if (req.body.imageUrl) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
+    const member = new TeamMember({
+      name: validator.trim(String(req.body.name)).substring(0, 100),
+      role: validator.trim(String(req.body.role)).substring(0, 100),
+      skills: Array.isArray(req.body.skills) ? req.body.skills.map(s => validator.trim(String(s)).substring(0, 100)) : [],
+      experience: req.body.experience ? validator.trim(String(req.body.experience)).substring(0, 200) : undefined,
+      socialLinks,
+      imageUrl: imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : true
+    });
+
     const newMember = await member.save();
     res.status(201).json(newMember);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to create team member.' });
+    res.status(400).json({ message: err.message || 'Failed to create team member.' });
   }
 });
 
@@ -68,6 +75,11 @@ router.put('/:id', auth, async (req, res) => {
     const member = await TeamMember.findById(req.params.id);
     if (!member) return res.status(404).json({ message: 'Team member not found.' });
 
+    let imageUrl = undefined;
+    if (req.body.imageUrl !== undefined) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
     if (req.body.name != null) member.name = validator.trim(String(req.body.name)).substring(0, 100);
     if (req.body.role != null) member.role = validator.trim(String(req.body.role)).substring(0, 100);
     if (req.body.skills != null) member.skills = Array.isArray(req.body.skills) ? req.body.skills.map(s => validator.trim(String(s)).substring(0, 100)) : [];
@@ -79,13 +91,13 @@ router.put('/:id', auth, async (req, res) => {
       if (req.body.socialLinks.github) sl.github = validator.trim(String(req.body.socialLinks.github)).substring(0, 500);
       member.socialLinks = sl;
     }
-    if (req.body.imageUrl != null) member.imageUrl = validator.trim(String(req.body.imageUrl)).substring(0, 2000);
+    if (imageUrl !== undefined) member.imageUrl = imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined;
     if (req.body.isActive !== undefined) member.isActive = req.body.isActive;
 
     const updatedMember = await member.save();
     res.json(updatedMember);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to update team member.' });
+    res.status(400).json({ message: err.message || 'Failed to update team member.' });
   }
 });
 

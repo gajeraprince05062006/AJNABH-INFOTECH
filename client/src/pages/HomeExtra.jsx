@@ -103,7 +103,6 @@ const HomeExtra = () => {
   const [portfolioPreview, setPortfolioPreview] = React.useState([]);
   const [testimonials, setTestimonials] = React.useState([]);
   const [servicesPreview, setServicesPreview] = React.useState([]);
-  const [blogPreview, setBlogPreview] = React.useState([]);
   const [heroStats, setHeroStats] = React.useState([
     { id: 'projects', iconName: 'Rocket', value: '50+', label: 'Projects Completed' },
     { id: 'clients', iconName: 'Users', value: '20+', label: 'Happy Clients' },
@@ -125,11 +124,6 @@ const HomeExtra = () => {
     fetch('/api/services')
       .then(res => res.json())
       .then(data => setServicesPreview(data.slice(0, 6)))
-      .catch(console.error);
-
-    fetch('/api/blogs')
-      .then(res => res.json())
-      .then(data => setBlogPreview(data.slice(0, 3)))
       .catch(console.error);
 
     fetch('/api/settings/stats')
@@ -495,54 +489,6 @@ const HomeExtra = () => {
               <h3 className="font-bold text-lg">{project.title}</h3>
               <p className="text-secondary text-xs">{project.description || project.desc}</p>
             </motion.div>
-          ))}
-        </motion.div>
-      </motion.section>
-
-      {/* 8. Blog Preview */}
-      <motion.section className="reveal-section max-w-6xl mx-auto px-6" variants={sectionReveal} initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-80px' }}>
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-5 mb-12">
-          <div>
-            <span className="text-xs uppercase tracking-widest text-accent font-bold px-3 py-1 bg-accent/10 rounded-full">Latest Insights</span>
-            <h2 className="animated-title text-3xl font-bold mt-4">From Our Blog</h2>
-          </div>
-          <button onClick={() => navigateTo('/blog')} className="premium-button text-accent hover:underline inline-flex items-center gap-1 text-sm font-semibold cursor-pointer self-start md:self-auto">
-            View All Blogs <ArrowRight size={16} />
-          </button>
-        </div>
-        <motion.div className="grid md:grid-cols-3 gap-6" variants={staggerReveal} initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-70px' }}>
-          {blogPreview.map((post, idx) => (
-            <motion.article
-              key={post._id || post.title || idx}
-              variants={itemReveal}
-              className="premium-card p-6 bg-white/5 border border-white/10 rounded-2xl flex flex-col min-h-[320px] cursor-default hover:border-accent/40 transition-all duration-300 group"
-            >
-              {post.imageUrl && !post.imageUrl.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/) ? (
-                <div className="h-36 mb-5 rounded-xl overflow-hidden bg-neutral-900 border border-white/5">
-                  <img src={post.imageUrl} alt={post.title} loading="lazy" className="w-full h-full object-cover opacity-85" />
-                </div>
-              ) : (
-                <div className="h-36 mb-5 rounded-xl bg-neutral-900/80 border border-white/5 flex items-center justify-center text-4xl">
-                  {post.imageUrl || post.emoji || 'News'}
-                </div>
-              )}
-              <div className="flex flex-wrap items-center gap-3 text-[10px] text-secondary/80 mb-4">
-                <span className="uppercase font-bold tracking-wider text-accent px-2 py-0.5 bg-accent/10 border border-accent/20 rounded-full">{post.category || 'Technology'}</span>
-                <span className="inline-flex items-center gap-1">
-                  <Clock size={12} />
-                  {post.date || (post.createdAt ? new Date(post.createdAt).toLocaleDateString() : 'Latest')}
-                </span>
-              </div>
-              <h3 className="font-bold text-lg mb-3 line-clamp-2 group-hover:text-accent transition-colors duration-300">{post.title}</h3>
-              <p className="text-secondary text-xs leading-relaxed line-clamp-3 flex-grow">{post.content || post.desc}</p>
-              <div className="border-t border-white/5 mt-5 pt-4 flex items-center justify-between text-[10px] text-secondary/70">
-                <span className="inline-flex items-center gap-1 font-semibold">
-                  <Users size={12} />
-                  {post.author || 'AJNABH Team'}
-                </span>
-                <span>{post.readTime || '5 min read'}</span>
-              </div>
-            </motion.article>
           ))}
         </motion.div>
       </motion.section>

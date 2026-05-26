@@ -3,6 +3,7 @@ const router = express.Router();
 const validator = require('validator');
 const Product = require('../models/Product');
 const auth = require('../middleware/auth');
+const { uploadImage } = require('../utils/cloudinaryService');
 
 // Get all products (public: active only; admin: all — requires auth)
 router.get('/', async (req, res) => {
@@ -34,21 +35,27 @@ router.post('/', auth, async (req, res) => {
     return res.status(400).json({ message: 'Name and overview are required.' });
   }
 
-  const product = new Product({
-    name: validator.trim(String(req.body.name)).substring(0, 200),
-    overview: validator.trim(String(req.body.overview)).substring(0, 5000),
-    features: Array.isArray(req.body.features) ? req.body.features.map(f => validator.trim(String(f)).substring(0, 200)) : [],
-    benefits: Array.isArray(req.body.benefits) ? req.body.benefits.map(b => validator.trim(String(b)).substring(0, 200)) : [],
-    price: req.body.price ? validator.trim(String(req.body.price)).substring(0, 100) : 'Custom Pricing',
-    demoUrl: req.body.demoUrl ? validator.trim(String(req.body.demoUrl)).substring(0, 2000) : undefined,
-    imageUrl: req.body.imageUrl ? validator.trim(String(req.body.imageUrl)).substring(0, 2000) : undefined,
-    isActive: req.body.isActive !== undefined ? req.body.isActive : true
-  });
   try {
+    let imageUrl = undefined;
+    if (req.body.imageUrl) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
+    const product = new Product({
+      name: validator.trim(String(req.body.name)).substring(0, 200),
+      overview: validator.trim(String(req.body.overview)).substring(0, 5000),
+      features: Array.isArray(req.body.features) ? req.body.features.map(f => validator.trim(String(f)).substring(0, 200)) : [],
+      benefits: Array.isArray(req.body.benefits) ? req.body.benefits.map(b => validator.trim(String(b)).substring(0, 200)) : [],
+      price: req.body.price ? validator.trim(String(req.body.price)).substring(0, 100) : 'Custom Pricing',
+      demoUrl: req.body.demoUrl ? validator.trim(String(req.body.demoUrl)).substring(0, 2000) : undefined,
+      imageUrl: imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : true
+    });
+
     const newProduct = await product.save();
     res.status(201).json(newProduct);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to create product.' });
+    res.status(400).json({ message: err.message || 'Failed to create product.' });
   }
 });
 
@@ -62,19 +69,24 @@ router.put('/:id', auth, async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found.' });
 
+    let imageUrl = undefined;
+    if (req.body.imageUrl !== undefined) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
     if (req.body.name != null) product.name = validator.trim(String(req.body.name)).substring(0, 200);
     if (req.body.overview != null) product.overview = validator.trim(String(req.body.overview)).substring(0, 5000);
     if (req.body.features != null) product.features = Array.isArray(req.body.features) ? req.body.features.map(f => validator.trim(String(f)).substring(0, 200)) : [];
     if (req.body.benefits != null) product.benefits = Array.isArray(req.body.benefits) ? req.body.benefits.map(b => validator.trim(String(b)).substring(0, 200)) : [];
     if (req.body.price != null) product.price = validator.trim(String(req.body.price)).substring(0, 100);
     if (req.body.demoUrl != null) product.demoUrl = validator.trim(String(req.body.demoUrl)).substring(0, 2000);
-    if (req.body.imageUrl != null) product.imageUrl = validator.trim(String(req.body.imageUrl)).substring(0, 2000);
+    if (imageUrl !== undefined) product.imageUrl = imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined;
     if (req.body.isActive !== undefined) product.isActive = req.body.isActive;
 
     const updatedProduct = await product.save();
     res.json(updatedProduct);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to update product.' });
+    res.status(400).json({ message: err.message || 'Failed to update product.' });
   }
 });
 

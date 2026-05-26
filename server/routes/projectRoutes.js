@@ -3,6 +3,7 @@ const router = express.Router();
 const validator = require('validator');
 const Project = require('../models/Project');
 const auth = require('../middleware/auth');
+const { uploadImage } = require('../utils/cloudinaryService');
 
 // GET /api/projects - Get all projects (public: active only; admin: all — requires auth)
 router.get('/', async (req, res) => {
@@ -35,10 +36,15 @@ router.post('/', auth, async (req, res) => {
   }
 
   try {
+    let imageUrl = undefined;
+    if (req.body.imageUrl) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
     const newProject = new Project({
       title: validator.trim(String(req.body.title)).substring(0, 200),
       description: validator.trim(String(req.body.description)).substring(0, 5000),
-      imageUrl: req.body.imageUrl ? validator.trim(String(req.body.imageUrl)).substring(0, 2000) : undefined,
+      imageUrl: imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined,
       techStack: Array.isArray(req.body.techStack) ? req.body.techStack.map(t => validator.trim(String(t)).substring(0, 100)) : [],
       link: req.body.link ? validator.trim(String(req.body.link)).substring(0, 2000) : undefined,
       isActive: req.body.isActive !== undefined ? req.body.isActive : true
@@ -46,7 +52,7 @@ router.post('/', auth, async (req, res) => {
     await newProject.save();
     res.status(201).json(newProject);
   } catch (error) {
-    res.status(400).json({ message: 'Failed to create project.' });
+    res.status(400).json({ message: error.message || 'Failed to create project.' });
   }
 });
 
@@ -60,9 +66,14 @@ router.put('/:id', auth, async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: 'Project not found.' });
 
+    let imageUrl = undefined;
+    if (req.body.imageUrl !== undefined) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
     if (req.body.title != null) project.title = validator.trim(String(req.body.title)).substring(0, 200);
     if (req.body.description != null) project.description = validator.trim(String(req.body.description)).substring(0, 5000);
-    if (req.body.imageUrl != null) project.imageUrl = validator.trim(String(req.body.imageUrl)).substring(0, 2000);
+    if (imageUrl !== undefined) project.imageUrl = imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined;
     if (req.body.techStack != null) project.techStack = Array.isArray(req.body.techStack) ? req.body.techStack.map(t => validator.trim(String(t)).substring(0, 100)) : [];
     if (req.body.link != null) project.link = validator.trim(String(req.body.link)).substring(0, 2000);
     if (req.body.isActive !== undefined) project.isActive = req.body.isActive;
@@ -70,7 +81,7 @@ router.put('/:id', auth, async (req, res) => {
     const updatedProject = await project.save();
     res.status(200).json(updatedProject);
   } catch (error) {
-    res.status(400).json({ message: 'Failed to update project.' });
+    res.status(400).json({ message: error.message || 'Failed to update project.' });
   }
 });
 

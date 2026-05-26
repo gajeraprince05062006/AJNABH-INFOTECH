@@ -3,6 +3,7 @@ const router = express.Router();
 const validator = require('validator');
 const Blog = require('../models/Blog');
 const auth = require('../middleware/auth');
+const { uploadImage } = require('../utils/cloudinaryService');
 
 // Get all blogs (public: active only; admin: all — requires auth)
 router.get('/', async (req, res) => {
@@ -36,19 +37,25 @@ router.post('/', auth, async (req, res) => {
     return res.status(400).json({ message: 'Title, content, category, and author are required.' });
   }
 
-  const blog = new Blog({
-    title: validator.trim(String(req.body.title)).substring(0, 200),
-    content: validator.trim(String(req.body.content)).substring(0, 50000),
-    category: validator.trim(String(req.body.category)).substring(0, 100),
-    author: validator.trim(String(req.body.author)).substring(0, 100),
-    imageUrl: req.body.imageUrl ? validator.trim(String(req.body.imageUrl)).substring(0, 2000) : undefined,
-    isActive: req.body.isActive !== undefined ? req.body.isActive : true
-  });
   try {
+    let imageUrl = undefined;
+    if (req.body.imageUrl) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
+    const blog = new Blog({
+      title: validator.trim(String(req.body.title)).substring(0, 200),
+      content: validator.trim(String(req.body.content)).substring(0, 50000),
+      category: validator.trim(String(req.body.category)).substring(0, 100),
+      author: validator.trim(String(req.body.author)).substring(0, 100),
+      imageUrl: imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : true
+    });
+
     const newBlog = await blog.save();
     res.status(201).json(newBlog);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to create blog.' });
+    res.status(400).json({ message: err.message || 'Failed to create blog.' });
   }
 });
 
@@ -62,17 +69,22 @@ router.put('/:id', auth, async (req, res) => {
     const blog = await Blog.findById(req.params.id);
     if (!blog) return res.status(404).json({ message: 'Blog not found.' });
 
+    let imageUrl = undefined;
+    if (req.body.imageUrl !== undefined) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
     if (req.body.title != null) blog.title = validator.trim(String(req.body.title)).substring(0, 200);
     if (req.body.content != null) blog.content = validator.trim(String(req.body.content)).substring(0, 50000);
     if (req.body.category != null) blog.category = validator.trim(String(req.body.category)).substring(0, 100);
     if (req.body.author != null) blog.author = validator.trim(String(req.body.author)).substring(0, 100);
-    if (req.body.imageUrl != null) blog.imageUrl = validator.trim(String(req.body.imageUrl)).substring(0, 2000);
+    if (imageUrl !== undefined) blog.imageUrl = imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined;
     if (req.body.isActive !== undefined) blog.isActive = req.body.isActive;
 
     const updatedBlog = await blog.save();
     res.json(updatedBlog);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to update blog.' });
+    res.status(400).json({ message: err.message || 'Failed to update blog.' });
   }
 });
 

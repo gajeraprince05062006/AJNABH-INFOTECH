@@ -3,6 +3,7 @@ const router = express.Router();
 const validator = require('validator');
 const Testimonial = require('../models/Testimonial');
 const auth = require('../middleware/auth');
+const { uploadImage } = require('../utils/cloudinaryService');
 
 // Get all testimonials (public: active only; admin: all — requires auth)
 router.get('/', async (req, res) => {
@@ -39,19 +40,25 @@ router.post('/', auth, async (req, res) => {
     return res.status(400).json({ message: 'Rating must be between 1 and 5.' });
   }
 
-  const testimonial = new Testimonial({
-    clientName: validator.trim(String(req.body.clientName)).substring(0, 100),
-    company: validator.trim(String(req.body.company)).substring(0, 100),
-    review: validator.trim(String(req.body.review)).substring(0, 5000),
-    rating: rating || 5,
-    imageUrl: req.body.imageUrl ? validator.trim(String(req.body.imageUrl)).substring(0, 2000) : undefined,
-    isActive: req.body.isActive !== undefined ? req.body.isActive : true
-  });
   try {
+    let imageUrl = undefined;
+    if (req.body.imageUrl) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
+    const testimonial = new Testimonial({
+      clientName: validator.trim(String(req.body.clientName)).substring(0, 100),
+      company: validator.trim(String(req.body.company)).substring(0, 100),
+      review: validator.trim(String(req.body.review)).substring(0, 5000),
+      rating: rating || 5,
+      imageUrl: imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : true
+    });
+
     const newTestimonial = await testimonial.save();
     res.status(201).json(newTestimonial);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to create testimonial.' });
+    res.status(400).json({ message: err.message || 'Failed to create testimonial.' });
   }
 });
 
@@ -65,6 +72,11 @@ router.put('/:id', auth, async (req, res) => {
     const testimonial = await Testimonial.findById(req.params.id);
     if (!testimonial) return res.status(404).json({ message: 'Testimonial not found.' });
 
+    let imageUrl = undefined;
+    if (req.body.imageUrl !== undefined) {
+      imageUrl = await uploadImage(req.body.imageUrl);
+    }
+
     if (req.body.clientName != null) testimonial.clientName = validator.trim(String(req.body.clientName)).substring(0, 100);
     if (req.body.company != null) testimonial.company = validator.trim(String(req.body.company)).substring(0, 100);
     if (req.body.review != null) testimonial.review = validator.trim(String(req.body.review)).substring(0, 5000);
@@ -74,13 +86,13 @@ router.put('/:id', auth, async (req, res) => {
         testimonial.rating = rating;
       }
     }
-    if (req.body.imageUrl != null) testimonial.imageUrl = validator.trim(String(req.body.imageUrl)).substring(0, 2000);
+    if (imageUrl !== undefined) testimonial.imageUrl = imageUrl ? validator.trim(String(imageUrl)).substring(0, 2000) : undefined;
     if (req.body.isActive !== undefined) testimonial.isActive = req.body.isActive;
 
     const updatedTestimonial = await testimonial.save();
     res.json(updatedTestimonial);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to update testimonial.' });
+    res.status(400).json({ message: err.message || 'Failed to update testimonial.' });
   }
 });
 
