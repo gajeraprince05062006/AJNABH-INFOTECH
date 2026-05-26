@@ -164,6 +164,20 @@ mongoose.connect(MONGO_URI)
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT} [${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}]`);
+      
+      // Self-pinging keep-alive to prevent Render free tier from going to sleep
+      const renderUrl = process.env.RENDER_EXTERNAL_URL;
+      if (renderUrl) {
+        const https = require('https');
+        console.log(`Keep-alive active: Pinging ${renderUrl} every 14 minutes.`);
+        setInterval(() => {
+          https.get(renderUrl, (res) => {
+            console.log(`Keep-alive ping sent. Status code: ${res.statusCode}`);
+          }).on('error', (err) => {
+            console.error('Keep-alive ping error:', err.message);
+          });
+        }, 14 * 60 * 1000); // 14 minutes
+      }
     });
   })
   .catch((err) => {
