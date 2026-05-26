@@ -1,9 +1,65 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Plus, Trash2, Mail, Briefcase, Settings, Globe, Users, 
   BookOpen, Star, Shield, Layout, Server, AlertCircle, Edit, Eye, EyeOff, Cpu, GripVertical 
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  TouchSensor,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+const SortableCard = ({ id, children }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    boxShadow: isDragging ? '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)' : undefined,
+    transform: isDragging 
+      ? `${CSS.Transform.toString(transform)} scale(1.02)` 
+      : CSS.Transform.toString(transform),
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  return (
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      className="flex justify-between items-center p-4 bg-white/5 border border-white/5 rounded-xl text-xs gap-4 font-sans"
+    >
+      <div 
+        {...attributes} 
+        {...listeners} 
+        className="cursor-grab active:cursor-grabbing text-zinc-500 hover:text-white p-1 flex-shrink-0 select-none"
+        style={{ touchAction: 'none' }}
+      >
+        <GripVertical size={16} />
+      </div>
+      {children}
+    </div>
+  );
+};
 
 const AdminDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -13,13 +69,10 @@ const AdminDashboard = ({ onLogout }) => {
     projects: 0,
     products: 0,
     team: 0,
-    careers: 0,
-    applications: 0,
     blogs: 0,
     testimonials: 0,
     enquiries: 0,
-    users: 0,
-    technologies: 0
+    users: 0
   });
 
   // State arrays for CRUD lists
@@ -27,24 +80,19 @@ const AdminDashboard = ({ onLogout }) => {
   const [projects, setProjects] = useState([]);
   const [products, setProducts] = useState([]);
   const [team, setTeam] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  const [applications, setApplications] = useState([]);
   const [blogs, setBlogs] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [users, setUsers] = useState([]);
-  const [techGroups, setTechGroups] = useState([]);
 
   // Form states
   const [newService, setNewService] = useState({ title: '', description: '', features: '', tech: '', process: '' });
   const [newProject, setNewProject] = useState({ title: '', description: '', imageUrl: '', techStack: '', link: '' });
   const [newProduct, setNewProduct] = useState({ name: '', overview: '', features: '', benefits: '', price: '', demoUrl: '', imageUrl: '' });
   const [newTeam, setNewTeam] = useState({ name: '', role: '', skills: '', experience: '', linkedin: '', twitter: '', github: '', imageUrl: '' });
-  const [newJob, setNewJob] = useState({ title: '', type: 'Full-time', description: '', requirements: '', benefits: '' });
   const [newBlog, setNewBlog] = useState({ title: '', content: '', category: 'AI', author: '', imageUrl: '' });
   const [newTestimonial, setNewTestimonial] = useState({ clientName: '', company: '', review: '', rating: 5, imageUrl: '' });
-  const [newTechGroup, setNewTechGroup] = useState({ title: '', description: '', technologies: [] });
-  const [generalSettings, setGeneralSettings] = useState({ siteName: '', contactEmail: '', contactPhone: '', address: '' });
+  const [generalSettings, setGeneralSettings] = useState({ siteName: '', contactEmail: '', contactPhone: '', address: '', footerDescription: '', footerTagline: '' });
   const [seoSettings, setSeoSettings] = useState({ title: '', description: '', keywords: '' });
   const [statsSettings, setStatsSettings] = useState([
     { id: 'projects', iconName: 'Rocket', value: '', label: '' },
@@ -59,6 +107,23 @@ const AdminDashboard = ({ onLogout }) => {
   const [error, setError] = useState('');
 
   const API_URL = '/api';
+
+  // Authenticated fetch helper — injects Bearer token and handles 401 (auto-logout)
+  const authFetch = async (url, options = {}) => {
+    const token = sessionStorage.getItem('adminToken');
+    const headers = {
+      ...(options.headers || {}),
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+      sessionStorage.removeItem('adminToken');
+      sessionStorage.removeItem('adminUser');
+      onLogout();
+      throw new Error('Session expired. Please log in again.');
+    }
+    return res;
+  };
 
   useEffect(() => {
     cancelEdit();
@@ -81,117 +146,116 @@ const AdminDashboard = ({ onLogout }) => {
     setNewProject({ title: '', description: '', imageUrl: '', techStack: '', link: '' });
     setNewProduct({ name: '', overview: '', features: '', benefits: '', price: '', demoUrl: '', imageUrl: '' });
     setNewTeam({ name: '', role: '', skills: '', experience: '', linkedin: '', twitter: '', github: '', imageUrl: '' });
-    setNewJob({ title: '', type: 'Full-time', description: '', requirements: '', benefits: '' });
     setNewBlog({ title: '', content: '', category: 'AI', author: '', imageUrl: '' });
     setNewTestimonial({ clientName: '', company: '', review: '', rating: 5, imageUrl: '' });
-    setNewTechGroup({ title: '', description: '', technologies: [] });
   };
 
-  const [draggedIndex, setDraggedIndex] = useState(null);
+  /**
+   * Compress image using HTML5 Canvas
+   * Reduces image file size from 5MB+ to ~35KB
+   * 
+   * @param {string} base64Str - Base64 Data URI of the image
+   * @param {number} maxWidth - Maximum width in pixels (default: 800)
+   * @param {number} maxHeight - Maximum height in pixels (default: 800)
+   * @param {number} quality - JPEG quality 0-1 (default: 0.7)
+   * @returns {Promise<string>} Compressed Base64 Data URI
+   */
+  const compressImage = async (base64Str, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
 
-  const handleDragStart = (e, index) => {
-    setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = 'move';
+      img.onload = () => {
+        // Calculate new dimensions preserving aspect ratio
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        // Create off-screen canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Export as compressed JPEG
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      };
+
+      img.onerror = () => {
+        // If compression fails, return original
+        resolve(base64Str);
+      };
+    });
   };
 
-  const handleDragOver = (e, index, type) => {
-    e.preventDefault();
-    if (draggedIndex === null || draggedIndex === index) return;
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
+      },
+    })
+  );
 
-    let items;
-    let setItems;
+  const handleDragEnd = async (event, type, items, setItems) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-    if (type === 'services') {
-      items = services;
-      setItems = setServices;
-    } else if (type === 'projects') {
-      items = projects;
-      setItems = setProjects;
-    } else if (type === 'products') {
-      items = products;
-      setItems = setProducts;
-    } else if (type === 'team') {
-      items = team;
-      setItems = setTeam;
-    } else if (type === 'jobs') {
-      items = jobs;
-      setItems = setJobs;
-    } else if (type === 'blogs') {
-      items = blogs;
-      setItems = setBlogs;
-    } else if (type === 'testimonials') {
-      items = testimonials;
-      setItems = setTestimonials;
-    } else if (type === 'technologies') {
-      items = techGroups;
-      setItems = setTechGroups;
-    }
+    const oldIndex = items.findIndex(item => item._id === active.id);
+    const newIndex = items.findIndex(item => item._id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
 
-    if (!items || !setItems) return;
-
-    const listCopy = [...items];
-    const draggedItem = listCopy[draggedIndex];
-    listCopy.splice(draggedIndex, 1);
-    listCopy.splice(index, 0, draggedItem);
-
-    setDraggedIndex(index);
-    setItems(listCopy);
-  };
-
-  const handleDragEnd = async (type) => {
-    setDraggedIndex(null);
-
-    let items;
-    let endpoint;
-
-    if (type === 'services') {
-      items = services;
-      endpoint = 'services/reorder';
-    } else if (type === 'projects') {
-      items = projects;
-      endpoint = 'projects/reorder';
-    } else if (type === 'products') {
-      items = products;
-      endpoint = 'products/reorder';
-    } else if (type === 'team') {
-      items = team;
-      endpoint = 'team/reorder';
-    } else if (type === 'jobs') {
-      items = jobs;
-      endpoint = 'careers/jobs/reorder';
-    } else if (type === 'blogs') {
-      items = blogs;
-      endpoint = 'blogs/reorder';
-    } else if (type === 'testimonials') {
-      items = testimonials;
-      endpoint = 'testimonials/reorder';
-    } else if (type === 'technologies') {
-      items = techGroups;
-      endpoint = 'technologies/reorder';
-    }
-
-    if (!items || !endpoint) return;
+    const reorderedItems = arrayMove(items, oldIndex, newIndex);
+    setItems(reorderedItems);
 
     try {
-      const res = await fetch(`${API_URL}/${endpoint}`, {
+      const reorderedPayload = reorderedItems.map((item, index) => ({
+        id: item._id,
+        displayOrder: index + 1
+      }));
+
+      const res = await authFetch(`${API_URL}/admin/reorder?type=${type}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: items.map(item => item._id) })
+        body: JSON.stringify(reorderedPayload)
       });
+
       if (res.ok) {
         showMessage('Order updated successfully.');
       } else {
-        const data = await res.json().catch(() => ({}));
-        showMessage(data.message || 'Failed to update order', true);
+        const errData = await res.json().catch(() => ({}));
+        showMessage(errData.error || errData.message || 'Failed to persist order', true);
+        setItems(items); // Rollback
       }
     } catch (err) {
-      showMessage('Error saving new order', true);
+      console.error(err);
+      showMessage('Network error while saving order', true);
+      setItems(items); // Rollback
     }
   };
 
   const handleToggleStatus = async (endpoint, item) => {
     try {
-      const res = await fetch(`${API_URL}/${endpoint}/${item._id}`, {
+      const res = await authFetch(`${API_URL}/${endpoint}/${item._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: item.isActive === false ? true : false })
@@ -261,18 +325,6 @@ const AdminDashboard = ({ onLogout }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const startEditJob = (j) => {
-    setEditingId(j._id);
-    setNewJob({
-      title: j.title,
-      type: j.type || 'Full-time',
-      description: j.description,
-      requirements: j.requirements ? j.requirements.join(', ') : '',
-      benefits: j.benefits ? j.benefits.join(', ') : ''
-    });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const startEditBlog = (b) => {
     setEditingId(b._id);
     setNewBlog({
@@ -297,32 +349,19 @@ const AdminDashboard = ({ onLogout }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const startEditTechGroup = (tg) => {
-    setEditingId(tg._id);
-    setNewTechGroup({
-      title: tg.title,
-      description: tg.description,
-      technologies: tg.technologies ? tg.technologies.map(t => ({ name: t.name, description: t.description })) : []
-    });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const fetchData = async () => {
     setLoading(true);
     try {
       if (activeTab === 'dashboard') {
-        const [svcs, projs, prods, tm, jbs, apps, blgs, tsts, cncts, usrs, techs] = await Promise.all([
-          fetch(`${API_URL}/services?admin=true`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/projects?admin=true`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/products?admin=true`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/team?admin=true`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/careers/jobs?admin=true`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/careers/applications`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/blogs?admin=true`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/testimonials?admin=true`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/contacts`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/users`).then(r => r.json()).catch(() => []),
-          fetch(`${API_URL}/technologies?admin=true`).then(r => r.json()).catch(() => [])
+        const [svcs, projs, prods, tm, blgs, tsts, cncts, usrs] = await Promise.all([
+          authFetch(`${API_URL}/services?admin=true`).then(r => r.json()).catch(() => []),
+          authFetch(`${API_URL}/projects?admin=true`).then(r => r.json()).catch(() => []),
+          authFetch(`${API_URL}/products?admin=true`).then(r => r.json()).catch(() => []),
+          authFetch(`${API_URL}/team?admin=true`).then(r => r.json()).catch(() => []),
+          authFetch(`${API_URL}/blogs?admin=true`).then(r => r.json()).catch(() => []),
+          authFetch(`${API_URL}/testimonials?admin=true`).then(r => r.json()).catch(() => []),
+          authFetch(`${API_URL}/contacts`).then(r => r.json()).catch(() => []),
+          authFetch(`${API_URL}/users`).then(r => r.json()).catch(() => [])
         ]);
 
         setStats({
@@ -330,44 +369,36 @@ const AdminDashboard = ({ onLogout }) => {
           projects: projs.length,
           products: prods.length,
           team: tm.length,
-          careers: jbs.length,
-          applications: apps.length,
           blogs: blgs.length,
           testimonials: tsts.length,
           enquiries: cncts.length,
-          users: usrs.length,
-          technologies: techs.length
+          users: usrs.length
         });
       } else if (activeTab === 'services') {
-        const res = await fetch(`${API_URL}/services?admin=true`);
+        const res = await authFetch(`${API_URL}/services?admin=true`);
         setServices(await res.json());
       } else if (activeTab === 'portfolio') {
-        const res = await fetch(`${API_URL}/projects?admin=true`);
+        const res = await authFetch(`${API_URL}/projects?admin=true`);
         setProjects(await res.json());
       } else if (activeTab === 'products') {
-        const res = await fetch(`${API_URL}/products?admin=true`);
+        const res = await authFetch(`${API_URL}/products?admin=true`);
         setProducts(await res.json());
       } else if (activeTab === 'team') {
-        const res = await fetch(`${API_URL}/team?admin=true`);
+        const res = await authFetch(`${API_URL}/team?admin=true`);
         setTeam(await res.json());
-      } else if (activeTab === 'careers') {
-        const jobsRes = await fetch(`${API_URL}/careers/jobs?admin=true`);
-        setJobs(await jobsRes.json());
-        const appsRes = await fetch(`${API_URL}/careers/applications`);
-        setApplications(await appsRes.json());
       } else if (activeTab === 'blogs') {
-        const res = await fetch(`${API_URL}/blogs?admin=true`);
+        const res = await authFetch(`${API_URL}/blogs?admin=true`);
         setBlogs(await res.json());
       } else if (activeTab === 'testimonials') {
-        const res = await fetch(`${API_URL}/testimonials?admin=true`);
+        const res = await authFetch(`${API_URL}/testimonials?admin=true`);
         setTestimonials(await res.json());
       } else if (activeTab === 'enquiries') {
-        const res = await fetch(`${API_URL}/contacts`);
+        const res = await authFetch(`${API_URL}/contacts`);
         setContacts(await res.json());
       } else if (activeTab === 'settings') {
         const [genRes, statsRes] = await Promise.all([
-          fetch(`${API_URL}/settings/general`).then(r => r.json()).catch(() => ({})),
-          fetch(`${API_URL}/settings/stats`).then(r => r.json()).catch(() => ({}))
+          authFetch(`${API_URL}/settings/general`).then(r => r.json()).catch(() => ({})),
+          authFetch(`${API_URL}/settings/stats`).then(r => r.json()).catch(() => ({}))
         ]);
         setGeneralSettings(genRes.value || {});
         setStatsSettings(statsRes.value || [
@@ -377,15 +408,12 @@ const AdminDashboard = ({ onLogout }) => {
           { id: 'support', iconName: 'Headphones', value: '24/7', label: 'Support Available' }
         ]);
       } else if (activeTab === 'seo') {
-        const res = await fetch(`${API_URL}/settings/seo`);
+        const res = await authFetch(`${API_URL}/settings/seo`);
         const data = await res.json();
         setSeoSettings(data.value || {});
       } else if (activeTab === 'users') {
-        const res = await fetch(`${API_URL}/users`);
+        const res = await authFetch(`${API_URL}/users`);
         setUsers(await res.json());
-      } else if (activeTab === 'technologies') {
-        const res = await fetch(`${API_URL}/technologies?admin=true`);
-        setTechGroups(await res.json());
       }
     } catch (err) {
       console.error('Fetch error:', err);
@@ -401,7 +429,7 @@ const AdminDashboard = ({ onLogout }) => {
     e.preventDefault();
     const isEdit = !!editingId;
     try {
-      const res = await fetch(isEdit ? `${API_URL}/services/${editingId}` : `${API_URL}/services`, {
+      const res = await authFetch(isEdit ? `${API_URL}/services/${editingId}` : `${API_URL}/services`, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -429,7 +457,7 @@ const AdminDashboard = ({ onLogout }) => {
     e.preventDefault();
     const isEdit = !!editingId;
     try {
-      const res = await fetch(isEdit ? `${API_URL}/projects/${editingId}` : `${API_URL}/projects`, {
+      const res = await authFetch(isEdit ? `${API_URL}/projects/${editingId}` : `${API_URL}/projects`, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -457,7 +485,7 @@ const AdminDashboard = ({ onLogout }) => {
     e.preventDefault();
     const isEdit = !!editingId;
     try {
-      const res = await fetch(isEdit ? `${API_URL}/products/${editingId}` : `${API_URL}/products`, {
+      const res = await authFetch(isEdit ? `${API_URL}/products/${editingId}` : `${API_URL}/products`, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -487,7 +515,7 @@ const AdminDashboard = ({ onLogout }) => {
     e.preventDefault();
     const isEdit = !!editingId;
     try {
-      const res = await fetch(isEdit ? `${API_URL}/team/${editingId}` : `${API_URL}/team`, {
+      const res = await authFetch(isEdit ? `${API_URL}/team/${editingId}` : `${API_URL}/team`, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -516,39 +544,11 @@ const AdminDashboard = ({ onLogout }) => {
     }
   };
 
-  const handleSaveJob = async (e) => {
-    e.preventDefault();
-    const isEdit = !!editingId;
-    try {
-      const res = await fetch(isEdit ? `${API_URL}/careers/jobs/${editingId}` : `${API_URL}/careers/jobs`, {
-        method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newJob.title,
-          type: newJob.type,
-          description: newJob.description,
-          requirements: newJob.requirements.split(',').map(r => r.trim()).filter(Boolean),
-          benefits: newJob.benefits.split(',').map(b => b.trim()).filter(Boolean)
-        })
-      });
-      if (res.ok) {
-        showMessage(isEdit ? 'Job opening updated!' : 'Job opening posted!');
-        cancelEdit();
-        fetchData();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        showMessage(data.error || data.message || (isEdit ? 'Failed to update job opening' : 'Failed to save job opening'), true);
-      }
-    } catch (err) {
-      showMessage(isEdit ? 'Failed to update job opening' : 'Failed to save job opening', true);
-    }
-  };
-
   const handleSaveBlog = async (e) => {
     e.preventDefault();
     const isEdit = !!editingId;
     try {
-      const res = await fetch(isEdit ? `${API_URL}/blogs/${editingId}` : `${API_URL}/blogs`, {
+      const res = await authFetch(isEdit ? `${API_URL}/blogs/${editingId}` : `${API_URL}/blogs`, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newBlog)
@@ -570,7 +570,7 @@ const AdminDashboard = ({ onLogout }) => {
     e.preventDefault();
     const isEdit = !!editingId;
     try {
-      const res = await fetch(isEdit ? `${API_URL}/testimonials/${editingId}` : `${API_URL}/testimonials`, {
+      const res = await authFetch(isEdit ? `${API_URL}/testimonials/${editingId}` : `${API_URL}/testimonials`, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTestimonial)
@@ -588,35 +588,9 @@ const AdminDashboard = ({ onLogout }) => {
     }
   };
 
-  const handleSaveTechGroup = async (e) => {
-    e.preventDefault();
-    const isEdit = !!editingId;
-    try {
-      const res = await fetch(isEdit ? `${API_URL}/technologies/${editingId}` : `${API_URL}/technologies`, {
-        method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newTechGroup.title,
-          description: newTechGroup.description,
-          technologies: newTechGroup.technologies.filter(t => t.name.trim() !== '')
-        })
-      });
-      if (res.ok) {
-        showMessage(isEdit ? 'Technology group updated successfully!' : 'Technology group saved successfully!');
-        cancelEdit();
-        fetchData();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        showMessage(data.error || data.message || (isEdit ? 'Failed to update technology group' : 'Failed to save technology group'), true);
-      }
-    } catch (err) {
-      showMessage(isEdit ? 'Failed to update technology group' : 'Failed to save technology group', true);
-    }
-  };
-
   const handleSaveSettings = async (key, val) => {
     try {
-      const res = await fetch(`${API_URL}/settings/${key}`, {
+      const res = await authFetch(`${API_URL}/settings/${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: val })
@@ -636,7 +610,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_URL}/users/register`, {
+      const res = await authFetch(`${API_URL}/users/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser)
@@ -659,7 +633,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDeleteItem = async (endpoint, id) => {
     if (!window.confirm('Are you sure you want to delete this item?')) return;
     try {
-      const res = await fetch(`${API_URL}/${endpoint}/${id}`, {
+      const res = await authFetch(`${API_URL}/${endpoint}/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -693,10 +667,8 @@ const AdminDashboard = ({ onLogout }) => {
           { key: 'portfolio', label: 'Projects', icon: <Briefcase size={16} /> },
           { key: 'products', label: 'Products', icon: <Layout size={16} /> },
           { key: 'team', label: 'Team Members', icon: <Users size={16} /> },
-          { key: 'careers', label: 'Careers', icon: <Briefcase size={16} /> },
           { key: 'blogs', label: 'Blog Posts', icon: <BookOpen size={16} /> },
           { key: 'testimonials', label: 'Testimonials', icon: <Star size={16} /> },
-          { key: 'technologies', label: 'Technologies', icon: <Cpu size={16} /> },
           { key: 'enquiries', label: 'Enquiries', icon: <Mail size={16} /> },
           { key: 'settings', label: 'Web Settings', icon: <Settings size={16} /> },
           { key: 'seo', label: 'SEO Config', icon: <Globe size={16} /> },
@@ -741,6 +713,139 @@ const AdminDashboard = ({ onLogout }) => {
           </div>
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+            
+            {/* 1. DASHBOARD OVERVIEW */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-8">
+                <h3 className="text-2xl font-bold border-b border-white/10 pb-4">Dashboard Overview</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                  {Object.entries(stats).map(([k, val]) => {
+                    const tabMap = {
+                      services: 'services',
+                      projects: 'portfolio',
+                      products: 'products',
+                      team: 'team',
+                      blogs: 'blogs',
+                      testimonials: 'testimonials',
+                      enquiries: 'enquiries',
+                      users: 'users'
+                    }[k] || 'dashboard';
+                    return (
+                      <button 
+                        key={k}
+                        onClick={() => setActiveTab(tabMap)}
+                        className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center space-y-1 hover:bg-white/10 transition-colors w-full cursor-pointer group"
+                      >
+                        <p className="text-[10px] uppercase tracking-wider text-secondary group-hover:text-white transition-colors font-bold">{k}</p>
+                        <p className="text-3xl font-extrabold font-mono text-accent">{val}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 2. SERVICES MODULE */}
+            {activeTab === 'services' && (
+              <div className="space-y-8">
+                <h3 className="text-2xl font-bold border-b border-white/10 pb-4">Manage Services</h3>
+                <form onSubmit={handleSaveService} className="space-y-4 bg-black/40 p-6 border border-white/5 rounded-2xl">
+                  <h4 className="font-bold text-sm">{editingId ? 'Edit Service' : 'Add Service'}</h4>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <input required placeholder="Service Title" value={newService.title} onChange={e => setNewService({...newService, title: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
+                    <input required placeholder="Key Features (comma separated)" value={newService.features} onChange={e => setNewService({...newService, features: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <input required placeholder="Tech Stack (comma separated)" value={newService.tech} onChange={e => setNewService({...newService, tech: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
+                    <input required placeholder="Dev Process Steps (comma separated)" value={newService.process} onChange={e => setNewService({...newService, process: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
+                  </div>
+                  <textarea required placeholder="Description" value={newService.description} onChange={e => setNewService({...newService, description: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs h-20 resize-none" />
+                  <div className="flex gap-2">
+                    <button type="submit" className="px-6 py-2 bg-white text-black font-semibold rounded-lg text-xs cursor-pointer hover:bg-gray-200">{editingId ? 'Update Service' : 'Save Service'}</button>
+                    {editingId && (
+                      <button type="button" onClick={cancelEdit} className="px-6 py-2 bg-red-600/80 hover:bg-red-600 text-white font-semibold rounded-lg text-xs cursor-pointer">Cancel</button>
+                    )}
+                  </div>
+                </form>
+
+                <div className="space-y-4">
+                  <h4 className="font-bold">Existing Services ({services.length})</h4>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'services', services, setServices)}>
+                    <SortableContext items={services.map(s => s._id)} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-4">
+                        {services.map(s => (
+                          <SortableCard key={s._id} id={s._id}>
+                            <div onClick={() => startEditService(s)} className="flex-grow min-w-0 cursor-pointer group">
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-sm truncate group-hover:text-accent transition-colors">{s.title}</p>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${s.isActive !== false ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                  {s.isActive !== false ? 'Active' : 'Inactive'}
+                                </span>
+                              </div>
+                              <p className="text-secondary truncate mt-1">{s.description}</p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <button 
+                                onClick={() => handleToggleStatus('services', s)} 
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${s.isActive !== false ? 'text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300' : 'text-green-400 border-green-500/20 hover:bg-green-500/10 hover:text-green-300'}`}
+                              >
+                                {s.isActive !== false ? 'Deactivate' : 'Activate'}
+                              </button>
+                              <button 
+                                onClick={() => startEditService(s)} 
+                                className="p-2 text-accent border border-accent/20 hover:bg-accent/10 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteItem('services', s._id)} 
+                                className="p-2 text-red-500 border border-red-500/20 hover:bg-red-500/10 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </SortableCard>
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                </div>
+              </div>
+            )}
+
+            {/* 3. PORTFOLIO (PROJECTS) MODULE */}
+            {activeTab === 'portfolio' && (
+              <div className="space-y-8">
+                <h3 className="text-2xl font-bold border-b border-white/10 pb-4">Manage Projects</h3>
+                <form onSubmit={handleSaveProject} className="space-y-4 bg-black/40 p-6 border border-white/5 rounded-2xl">
+                  <h4 className="font-bold text-sm">{editingId ? 'Edit Project' : 'Add Project'}</h4>
+                  <div className="grid md:grid-cols-2 gap-4 items-center">
+                    <input required placeholder="Project Title" value={newProject.title} onChange={e => setNewProject({...newProject, title: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
+                    <div className="flex items-center gap-3">
+                      <div className="flex-grow">
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result);
+                                setNewProject({...newProject, imageUrl: compressed});
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }} 
+                          className="w-full text-xs text-secondary file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-white/10 file:text-[10px] file:font-semibold file:bg-white/5 file:text-white file:cursor-pointer hover:file:bg-white/10 file:transition-colors" 
+                        />
+                      </div>
+                      {newProject.imageUrl && (
+                        <div className="w-10 h-10 border border-white/10 rounded-lg overflow-hidden flex-shrink-0 bg-white/5">
+                          <img src={newProject.imageUrl} alt="Project Preview" className="w-full h-full object-cover" />
+                        </div>
                       )}
                     </div>
                   </div>
@@ -759,41 +864,47 @@ const AdminDashboard = ({ onLogout }) => {
 
                 <div className="space-y-4">
                   <h4 className="font-bold">Project Items ({projects.length})</h4>
-                  {projects.map(p => (
-                    <div key={p._id} className="flex justify-between items-center p-4 bg-white/5 border border-white/5 rounded-xl text-xs gap-4 font-sans">
-                      <div onClick={() => startEditProject(p)} className="flex-grow min-w-0 cursor-pointer group">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-sm truncate group-hover:text-accent transition-colors">{p.title}</p>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${p.isActive !== false ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                            {p.isActive !== false ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                        <p className="text-secondary truncate mt-1">{p.description}</p>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'projects', projects, setProjects)}>
+                    <SortableContext items={projects.map(p => p._id)} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-4">
+                        {projects.map(p => (
+                          <SortableCard key={p._id} id={p._id}>
+                            <div onClick={() => startEditProject(p)} className="flex-grow min-w-0 cursor-pointer group">
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-sm truncate group-hover:text-accent transition-colors">{p.title}</p>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${p.isActive !== false ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                  {p.isActive !== false ? 'Active' : 'Inactive'}
+                                </span>
+                              </div>
+                              <p className="text-secondary truncate mt-1">{p.description}</p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <button 
+                                onClick={() => handleToggleStatus('projects', p)} 
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${p.isActive !== false ? 'text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300' : 'text-green-400 border-green-500/20 hover:bg-green-500/10 hover:text-green-300'}`}
+                              >
+                                {p.isActive !== false ? 'Deactivate' : 'Activate'}
+                              </button>
+                              <button 
+                                onClick={() => startEditProject(p)} 
+                                className="p-2 text-accent border border-accent/20 hover:bg-accent/10 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteItem('projects', p._id)} 
+                                className="p-2 text-red-500 border border-red-500/20 hover:bg-red-500/10 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </SortableCard>
+                        ))}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button 
-                          onClick={() => handleToggleStatus('projects', p)} 
-                          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${p.isActive !== false ? 'text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300' : 'text-green-400 border-green-500/20 hover:bg-green-500/10 hover:text-green-300'}`}
-                        >
-                          {p.isActive !== false ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button 
-                          onClick={() => startEditProject(p)} 
-                          className="p-2 text-accent border border-accent/20 hover:bg-accent/10 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteItem('projects', p._id)} 
-                          className="p-2 text-red-500 border border-red-500/20 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
               </div>
             )}
@@ -815,12 +926,13 @@ const AdminDashboard = ({ onLogout }) => {
                         <input 
                           type="file" 
                           accept="image/*" 
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const file = e.target.files[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setNewProduct({ ...newProduct, imageUrl: reader.result });
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result);
+                                setNewProduct({ ...newProduct, imageUrl: compressed });
                               };
                               reader.readAsDataURL(file);
                             }
@@ -904,12 +1016,13 @@ const AdminDashboard = ({ onLogout }) => {
                         <input 
                           type="file" 
                           accept="image/*" 
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const file = e.target.files[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setNewTeam({ ...newTeam, imageUrl: reader.result });
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result);
+                                setNewTeam({ ...newTeam, imageUrl: compressed });
                               };
                               reader.readAsDataURL(file);
                             }
@@ -977,97 +1090,6 @@ const AdminDashboard = ({ onLogout }) => {
               </div>
             )}
 
-            {/* 6. CAREERS MODULE */}
-            {activeTab === 'careers' && (
-              <div className="space-y-8">
-                <h3 className="text-2xl font-bold border-b border-white/10 pb-4">Manage Careers</h3>
-                
-                {/* Save Job Form */}
-                <form onSubmit={handleSaveJob} className="space-y-4 bg-black/40 p-6 border border-white/5 rounded-2xl">
-                  <h4 className="font-bold text-sm">{editingId ? 'Edit Job Opening' : 'Add Job Opening'}</h4>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <input required placeholder="Job Title" value={newJob.title} onChange={e => setNewJob({...newJob, title: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
-                    <select value={newJob.type} onChange={e => setNewJob({...newJob, type: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs [&>option]:bg-black">
-                      <option>Full-time</option>
-                      <option>Part-time</option>
-                      <option>Internship</option>
-                    </select>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <input placeholder="Requirements (comma separated)" value={newJob.requirements} onChange={e => setNewJob({...newJob, requirements: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
-                    <input placeholder="Benefits (comma separated)" value={newJob.benefits} onChange={e => setNewJob({...newJob, benefits: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" />
-                  </div>
-                  <textarea required placeholder="Job Description" value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs h-16 resize-none" />
-                  <div className="flex gap-2">
-                    <button type="submit" className="px-6 py-2 bg-white text-black font-semibold rounded-lg text-xs cursor-pointer hover:bg-gray-200">{editingId ? 'Update Position' : 'Post Position'}</button>
-                    {editingId && (
-                      <button type="button" onClick={cancelEdit} className="px-6 py-2 bg-red-600/80 hover:bg-red-600 text-white font-semibold rounded-lg text-xs cursor-pointer">Cancel</button>
-                    )}
-                  </div>
-                </form>
-
-                {/* Job Openings List */}
-                <div className="space-y-4">
-                  <h4 className="font-bold">Active Openings ({jobs.length})</h4>
-                  {jobs.map(j => (
-                    <div key={j._id} className="flex justify-between items-center p-4 bg-white/5 border border-white/5 rounded-xl text-xs gap-4 font-sans">
-                      <div onClick={() => startEditJob(j)} className="flex-grow min-w-0 cursor-pointer group">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-sm truncate group-hover:text-accent transition-colors">{j.title} ({j.type})</p>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${j.isActive !== false ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                            {j.isActive !== false ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                        <p className="text-secondary truncate mt-1">{j.description}</p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button 
-                          onClick={() => handleToggleStatus('careers/jobs', j)} 
-                          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${j.isActive !== false ? 'text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300' : 'text-green-400 border-green-500/20 hover:bg-green-500/10 hover:text-green-300'}`}
-                        >
-                          {j.isActive !== false ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button 
-                          onClick={() => startEditJob(j)} 
-                          className="p-2 text-accent border border-accent/20 hover:bg-accent/10 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteItem('careers/jobs', j._id)} 
-                          className="p-2 text-red-500 border border-red-500/20 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Job Applications List */}
-                <div className="space-y-4 border-t border-white/10 pt-6">
-                  <h4 className="font-bold">Submitted Applications ({applications.length})</h4>
-                  {applications.length === 0 ? <p className="text-secondary text-xs">No applications submitted yet.</p> : null}
-                  {applications.map(app => (
-                    <div key={app._id} className="p-4 bg-white/5 border border-white/5 rounded-xl text-xs space-y-2">
-                      <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
-                        <div>
-                          <p className="font-bold text-sm">{app.name}</p>
-                          <p className="text-accent">{app.email} | {app.phone}</p>
-                          <p className="text-secondary mt-1">Applying for: <strong className="text-white">{app.position}</strong></p>
-                        </div>
-                        <button onClick={() => handleDeleteItem('careers/applications', app._id)} className="text-red-500 hover:text-red-400 p-2 h-fit self-end sm:self-auto"><Trash2 size={16} /></button>
-                      </div>
-                      {app.resumeUrl && <p className="text-secondary font-mono text-[10px]">Resume Link: <a href={app.resumeUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{app.resumeUrl}</a></p>}
-                      {app.message && <p className="bg-black/30 p-2 rounded text-secondary border border-white/5 mt-1">{app.message}</p>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* 7. BLOG MODULE */}
             {activeTab === 'blogs' && (
               <div className="space-y-8">
@@ -1090,12 +1112,13 @@ const AdminDashboard = ({ onLogout }) => {
                       <input 
                         type="file" 
                         accept="image/*" 
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files[0];
                           if (file) {
                             const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setNewBlog({ ...newBlog, imageUrl: reader.result });
+                            reader.onloadend = async () => {
+                              const compressed = await compressImage(reader.result);
+                              setNewBlog({ ...newBlog, imageUrl: compressed });
                             };
                             reader.readAsDataURL(file);
                           }
@@ -1181,12 +1204,13 @@ const AdminDashboard = ({ onLogout }) => {
                       <input 
                         type="file" 
                         accept="image/*" 
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files[0];
                           if (file) {
                             const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setNewTestimonial({ ...newTestimonial, imageUrl: reader.result });
+                            reader.onloadend = async () => {
+                              const compressed = await compressImage(reader.result);
+                              setNewTestimonial({ ...newTestimonial, imageUrl: compressed });
                             };
                             reader.readAsDataURL(file);
                           }
@@ -1294,6 +1318,14 @@ const AdminDashboard = ({ onLogout }) => {
                   <div>
                     <label className="mb-1 block text-secondary font-bold">Office Address</label>
                     <textarea value={generalSettings.address || ''} onChange={e => setGeneralSettings({...generalSettings, address: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs h-16 resize-none" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-secondary font-bold">Footer Brand Description</label>
+                    <textarea value={generalSettings.footerDescription || ''} onChange={e => setGeneralSettings({...generalSettings, footerDescription: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs h-20 resize-none" placeholder="Transforming ideas into intelligent digital solutions..." />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-secondary font-bold">Footer Bottom Tagline</label>
+                    <input type="text" value={generalSettings.footerTagline || ''} onChange={e => setGeneralSettings({...generalSettings, footerTagline: e.target.value})} className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" placeholder="Innovation • Technology • Growth" />
                   </div>
                   <button onClick={() => handleSaveSettings('general', generalSettings)} className="px-6 py-2 bg-white text-black font-semibold rounded-lg text-xs cursor-pointer hover:bg-gray-200 mt-2">Save General Settings</button>
                 </div>
@@ -1405,151 +1437,6 @@ const AdminDashboard = ({ onLogout }) => {
                         <p className="text-secondary mt-0.5">Created: {new Date(u.createdAt).toLocaleDateString()}</p>
                       </div>
                       <button onClick={() => handleDeleteItem('users', u._id)} className="text-red-500 hover:text-red-400 p-2"><Trash2 size={16} /></button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 13. TECHNOLOGIES MODULE */}
-            {activeTab === 'technologies' && (
-              <div className="space-y-8">
-                <h3 className="text-2xl font-bold border-b border-white/10 pb-4">Manage Technologies</h3>
-                <form onSubmit={handleSaveTechGroup} className="space-y-4 bg-black/40 p-6 border border-white/5 rounded-2xl">
-                  <h4 className="font-bold text-sm">{editingId ? 'Edit Technology Group' : 'Add Technology Group'}</h4>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <input 
-                      required 
-                      placeholder="Group Title (e.g. Frontend Engineering)" 
-                      value={newTechGroup.title} 
-                      onChange={e => setNewTechGroup({...newTechGroup, title: e.target.value})} 
-                      className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" 
-                    />
-                    <input 
-                      required 
-                      placeholder="Short Description" 
-                      value={newTechGroup.description} 
-                      onChange={e => setNewTechGroup({...newTechGroup, description: e.target.value})} 
-                      className="w-full px-4 py-2 bg-black border border-white/10 rounded-lg text-xs" 
-                    />
-                  </div>
-                  
-                  {/* Technologies Sub-List */}
-                  <div className="space-y-3 border-t border-white/10 pt-4 mt-4">
-                    <div className="flex justify-between items-center">
-                      <h5 className="font-bold text-xs uppercase tracking-wider text-accent">Technologies</h5>
-                      <button
-                        type="button"
-                        onClick={() => setNewTechGroup({
-                          ...newTechGroup,
-                          technologies: [...newTechGroup.technologies, { name: '', description: '' }]
-                        })}
-                        className="px-3 py-1 bg-accent/20 hover:bg-accent/30 text-accent font-semibold rounded-lg text-[10px] cursor-pointer flex items-center gap-1"
-                      >
-                        <Plus size={12} /> Add Tech Item
-                      </button>
-                    </div>
-                    {newTechGroup.technologies.length === 0 ? (
-                      <p className="text-[11px] text-secondary">No technologies added yet. Click "Add Tech Item" above.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {newTechGroup.technologies.map((tech, index) => (
-                          <div key={index} className="flex gap-3 items-center bg-black/20 p-3 rounded-xl border border-white/5">
-                            <input
-                              required
-                              placeholder="Tech Name (e.g. React)"
-                              value={tech.name}
-                              onChange={e => {
-                                const updated = [...newTechGroup.technologies];
-                                updated[index].name = e.target.value;
-                                setNewTechGroup({ ...newTechGroup, technologies: updated });
-                              }}
-                              className="flex-grow px-3 py-1.5 bg-black border border-white/10 rounded-lg text-xs"
-                            />
-                            <input
-                              required
-                              placeholder="Description (e.g. For dynamic web architectures)"
-                              value={tech.description}
-                              onChange={e => {
-                                const updated = [...newTechGroup.technologies];
-                                updated[index].description = e.target.value;
-                                setNewTechGroup({ ...newTechGroup, technologies: updated });
-                              }}
-                              className="flex-grow px-3 py-1.5 bg-black border border-white/10 rounded-lg text-xs"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = newTechGroup.technologies.filter((_, idx) => idx !== index);
-                                setNewTechGroup({ ...newTechGroup, technologies: updated });
-                              }}
-                              className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors border border-red-500/10"
-                              title="Remove Item"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button type="submit" className="px-6 py-2 bg-white text-black font-semibold rounded-lg text-xs cursor-pointer hover:bg-gray-200">
-                      {editingId ? 'Update Tech Group' : 'Save Tech Group'}
-                    </button>
-                    {editingId && (
-                      <button type="button" onClick={cancelEdit} className="px-6 py-2 bg-red-600/80 hover:bg-red-600 text-white font-semibold rounded-lg text-xs cursor-pointer">
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </form>
-
-                <div className="space-y-4">
-                  <h4 className="font-bold">Existing Technology Groups ({techGroups.length})</h4>
-                  {techGroups.map(tg => (
-                    <div key={tg._id} className="flex justify-between items-center p-4 bg-white/5 border border-white/5 rounded-xl text-xs gap-4 font-sans">
-                      <div onClick={() => startEditTechGroup(tg)} className="flex-grow min-w-0 cursor-pointer group">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-sm truncate group-hover:text-accent transition-colors">{tg.title}</p>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${tg.isActive !== false ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                            {tg.isActive !== false ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                        <p className="text-secondary truncate mt-1">{tg.description}</p>
-                        {tg.technologies && tg.technologies.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {tg.technologies.map((t, idx) => (
-                              <span key={idx} className="px-2 py-0.5 bg-white/5 rounded text-[10px] text-zinc-400 border border-white/5">
-                                {t.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button 
-                          onClick={() => handleToggleStatus('technologies', tg)} 
-                          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${tg.isActive !== false ? 'text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300' : 'text-green-400 border-green-500/20 hover:bg-green-500/10 hover:text-green-300'}`}
-                        >
-                          {tg.isActive !== false ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button 
-                          onClick={() => startEditTechGroup(tg)} 
-                          className="p-2 text-accent border border-accent/20 hover:bg-accent/10 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteItem('technologies', tg._id)} 
-                          className="p-2 text-red-500 border border-red-500/20 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
                     </div>
                   ))}
                 </div>
