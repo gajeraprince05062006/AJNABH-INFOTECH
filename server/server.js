@@ -20,6 +20,7 @@ const userRoutes = require('./routes/userRoutes');
 const reorderRoutes = require('./routes/reorderRoutes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 const isProduction = process.env.NODE_ENV === 'production';
 
