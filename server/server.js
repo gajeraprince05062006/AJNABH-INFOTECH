@@ -179,9 +179,11 @@ mongoose.connect(MONGO_URI)
       const renderUrl = process.env.RENDER_EXTERNAL_URL;
       if (renderUrl) {
         const https = require('https');
-        console.log(`Keep-alive active: Pinging ${renderUrl} every 14 minutes.`);
+        // Ping the health check route to avoid 404 errors from the static SPA fallback
+        const pingUrl = renderUrl.endsWith('/') ? `${renderUrl}api/health` : `${renderUrl}/api/health`;
+        console.log(`Keep-alive active: Pinging ${pingUrl} every 14 minutes.`);
         setInterval(() => {
-          https.get(renderUrl, (res) => {
+          https.get(pingUrl, (res) => {
             console.log(`Keep-alive ping sent. Status code: ${res.statusCode}`);
           }).on('error', (err) => {
             console.error('Keep-alive ping error:', err.message);

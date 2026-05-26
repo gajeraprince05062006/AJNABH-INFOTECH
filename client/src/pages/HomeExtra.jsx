@@ -41,11 +41,10 @@ const aboutHighlights = [
 ];
 
 const sectionReveal = {
-  hidden: { opacity: 0, y: 34, filter: 'blur(10px)' },
+  hidden: { opacity: 0, y: 34 },
   visible: {
     opacity: 1,
     y: 0,
-    filter: 'blur(0px)',
     transition: { duration: 0.72, ease: [0.22, 1, 0.36, 1] }
   }
 };
@@ -58,11 +57,10 @@ const staggerReveal = {
 };
 
 const itemReveal = {
-  hidden: { opacity: 0, y: 18, filter: 'blur(8px)' },
+  hidden: { opacity: 0, y: 18 },
   visible: {
     opacity: 1,
     y: 0,
-    filter: 'blur(0px)',
     transition: { duration: 0.58, ease: [0.22, 1, 0.36, 1] }
   }
 };

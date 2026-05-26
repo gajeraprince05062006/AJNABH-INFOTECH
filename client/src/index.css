@@ -1255,3 +1255,46 @@ footer a:hover,
   text-transform: uppercase;
   font-weight: 600;
 }
+
+/* ─────────────────────────────────────────────
+   Mobile Performance Optimizations
+   ───────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Disable drift and float animations in the background to save GPU/CPU cycles */
+  .site-ambient__grid,
+  .site-ambient__grid::before,
+  .site-ambient__grid::after,
+  .site-ambient__particle-field,
+  .site-ambient__beam--one,
+  .site-ambient__beam--two {
+    animation: none !important;
+  }
+
+  /* Make the hero AI logo stage smaller to fit mobile screens and prevent horizontal scroll */
+  .hero-logo-stage {
+    top: 220px !important;
+    width: 280px !important;
+    height: 280px !important;
+    animation: none !important;
+  }
+
+  /* Simplify logo object and remove expensive drop-shadow filters */
+  .hero-logo-object {
+    opacity: 0.4 !important;
+    animation: none !important;
+    filter: drop-shadow(0 0 10px rgba(0, 210, 255, 0.5)) !important;
+    transform: translate(-50%, -50%) !important;
+  }
+
+  /* Hide the 3D orbits and neural lines on mobile to avoid rendering lag */
+  .hero-logo-orbit,
+  .hero-neural-line,
+  .hero-logo-particles {
+    display: none !important;
+  }
+  
+  /* Disable platform pulsation */
+  .hero-platform-anim {
+    animation: none !important;
+  }
+}
