@@ -68,8 +68,13 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Prevent NoSQL injection attacks
-app.use(mongoSanitize());
+// Prevent NoSQL injection attacks.
+// express-mongo-sanitize assigns to req.query, which is read-only in Express 5.
+app.use((req, res, next) => {
+  if (req.body) req.body = mongoSanitize.sanitize(req.body);
+  if (req.params) req.params = mongoSanitize.sanitize(req.params);
+  next();
+});
 
 // Prevent HTTP Parameter Pollution
 app.use(hpp());
