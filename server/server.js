@@ -98,6 +98,10 @@ app.use('/api/settings', settingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin/reorder', reorderRoutes);
 
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // ──────────────────────────────────────────
 // Production: Serve frontend static build
 // ──────────────────────────────────────────
@@ -106,7 +110,7 @@ if (isProduction) {
   app.use(express.static(clientDistPath));
 
   // SPA fallback — serve index.html for all non-API routes
-  app.get('*', (req, res) => {
+  app.get(/^(?!\/api).*/, (req, res) => {
     res.sendFile(path.join(clientDistPath, 'index.html'));
   });
 }
