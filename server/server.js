@@ -46,23 +46,55 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-// CORS — explicit origin whitelist
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
-  .split(',')
-  .map(o => o.trim());
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, server-to-server)
-    if (!origin) return callback(null, true);
+// CORS — dynamic and robust origin matching
+app.use(cors((req, callback) => {
+  const origin = req.header('Origin');
+  const allowedOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
+  
+  let isAllowed = false;
+  
+  if (!origin) {
+    isAllowed = true;
+  } else {
+    // 1. Check explicit whitelist
     if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+      isAllowed = true;
+    } 
+    // 2. Check same-origin (Origin host matches Host header)
+    else {
+      try {
+        const originUrl = new URL(origin);
+        const host = req.header('host');
+        if (originUrl.host === host) {
+          isAllowed = true;
+        }
+      } catch (e) {
+        // Invalid URL format
+      }
     }
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+    
+    // 3. In development, automatically allow localhost/127.0.0.1 on common Vite ports
+    if (!isAllowed && process.env.NODE_ENV !== 'production') {
+      const devPattern = /^https?:\/\/(localhost|127\.0\.0\.1):517[3-9]$/;
+      if (devPattern.test(origin)) {
+        isAllowed = true;
+      }
+    }
+  }
+  
+  if (isAllowed) {
+    callback(null, {
+      origin: true,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization']
+    });
+  } else {
+    callback(new Error('Not allowed by CORS'));
+  }
 }));
 
 // Parse JSON bodies (reduced from 50mb to 10mb to limit abuse)
