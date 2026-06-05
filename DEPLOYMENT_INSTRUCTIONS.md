@@ -9,7 +9,7 @@ Follow these steps to deploy the application on **Render** (Backend) and **Netli
 ### Step 1: Create a Web Service
 1. Log in to [Render](https://render.com/).
 2. Click **New +** and select **Web Service**.
-3. Connect your GitHub repository: `https://github.com/gajeraprince05062006/AJNABH_INFOTECH.git`.
+3. Connect your GitHub repository: `https://github.com/gajeraprince05062006/AJNABH-INFOTECH.git`.
 
 ### Step 2: Configure Service Settings
 * **Name**: `ajnabh-backend` (or your preferred name)
@@ -25,12 +25,12 @@ Click **Advanced** -> **Add Environment Variable** and insert the following valu
 | Key | Value / Instructions |
 | :--- | :--- |
 | `NODE_ENV` | `production` |
-| `MONGO_URI` | `mongodb://ajnabh_infotech:Ajnabh@...` (Your MongoDB Atlas connection URI) |
-| `JWT_SECRET` | `aJnAbH_1nf0t3cH_s3cuR3_jWt_k3y_2025_xK9mP2` (Your JWT secret string) |
+| `MONGO_URI` | Your MongoDB Atlas connection URI |
+| `JWT_SECRET` | A strong random secret string |
 | `CORS_ORIGIN` | `https://your-netlify-site.netlify.app` (Add your Netlify URL once deployed) |
-| `CLOUDINARY_CLOUD_NAME` | `dqhcgivh9` |
-| `CLOUDINARY_API_KEY` | `995497448358699` |
-| `CLOUDINARY_API_SECRET` | `JiO3wYP08-PNvQvO4epV0_ANG7Y` |
+| `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | Your Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Your Cloudinary API secret |
 | `RENDER_EXTERNAL_URL` | *Keep this field blank or add your service URL once Render generates it.* |
 
 > [!NOTE]
@@ -44,7 +44,7 @@ Click **Advanced** -> **Add Environment Variable** and insert the following valu
 ### Step 1: Create a New Site
 1. Log in to [Netlify](https://www.netlify.com/).
 2. Click **Add new site** -> **Import an existing project**.
-3. Select **GitHub** and connect your repository: `https://github.com/gajeraprince05062006/AJNABH_INFOTECH.git`.
+3. Select **GitHub** and connect your repository: `https://github.com/gajeraprince05062006/AJNABH-INFOTECH.git`.
 
 ### Step 2: Configure Build Settings
 * **Base directory**: `client`
