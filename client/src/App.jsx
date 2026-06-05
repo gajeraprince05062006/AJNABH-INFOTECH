@@ -79,7 +79,6 @@ function CenterRevealNav({ onBrandClick }) {
       <nav className="center-reveal-nav" aria-label="Primary navigation">
         <NavLink to="/" end className="center-reveal-nav__brand" aria-label="AJNABH INFOTECH home" onClick={handleBrandClick}>
           <img src="/logo.png" alt="AJNABH INFOTECH" className="center-reveal-nav__logo" />
-          <span>AJNABH INFOTECH</span>
         </NavLink>
         {navItems.map((item) => (
           <NavLink
@@ -189,7 +188,6 @@ function Footer() {
         <div className="site-footer__brand">
           <div className="site-footer__brand-logo">
             <img src="/logo.png" alt={settings.siteName} className="site-footer__logo-img" />
-            <span className="site-footer__brand-name">{settings.siteName}</span>
           </div>
           <p className="site-footer__brand-desc">
             {settings.footerDescription}

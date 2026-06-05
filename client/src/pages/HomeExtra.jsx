@@ -204,7 +204,6 @@ const HomeExtra = () => {
             <div className="hero-logo-orbit hero-logo-orbit--outer" />
             <div className="hero-logo-orbit hero-logo-orbit--middle" />
             <div className="hero-logo-orbit hero-logo-orbit--inner" />
-            <img src="/logo.png" alt="" className="hero-logo-object" />
           </div>
         </div>
 
