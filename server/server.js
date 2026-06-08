@@ -54,6 +54,12 @@ app.use(cors((req, callback) => {
     .map(o => o.trim())
     .filter(Boolean);
   
+  // Ensure the project's Netlify client is always allowed
+  const defaultClientOrigin = 'https://ajnabhinfotech.netlify.app';
+  if (!allowedOrigins.includes(defaultClientOrigin)) {
+    allowedOrigins.push(defaultClientOrigin);
+  }
+  
   let isAllowed = false;
   
   if (!origin) {
